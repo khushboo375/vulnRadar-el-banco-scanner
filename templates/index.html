@@ -100,6 +100,23 @@
         <button class="qt-btn" onclick="setUrl('http://localhost:4280')">DVWA</button>
       </div>
 
+      <div class="auth-section">
+        <label class="module-toggle active auth-toggle">
+          <input type="checkbox" class="module-check" id="use-authentication" checked />
+          <span class="toggle-dot"></span>
+          Use authentication
+        </label>
+        <div id="auth-fields" class="auth-fields">
+          <label class="field-label" for="auth-username">Username</label>
+          <input type="text" id="auth-username" class="url-input" autocomplete="username" />
+          <label class="field-label" for="auth-password">Password</label>
+          <input type="password" id="auth-password" class="url-input" autocomplete="current-password" />
+        </div>
+        <label class="field-label" for="max-pages">Maximum pages</label>
+        <input type="number" id="max-pages" class="url-input" value="25" min="1" max="250" />
+        <div id="auth-status" class="auth-status">Authentication ready</div>
+      </div>
+
       <div class="scan-modules">
         <h3 class="modules-title">Scan Modules</h3>
         <label class="module-toggle active">
@@ -268,6 +285,6 @@
   </section>
 </main>
 
-<script src="/static/js/scanner.js"></script>
+<script src="/static/js/scanner.js?v=2.1.1"></script>
 </body>
 </html>

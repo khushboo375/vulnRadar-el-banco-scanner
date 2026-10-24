@@ -40,7 +40,7 @@ XSS_PAYLOADS = [
 ]
 
 
-def test_xss(base_url: str, forms: list[dict]) -> list[dict]:
+def test_xss(base_url: str, forms: list[dict], session=None) -> list[dict]:
     """
     Test each text-like field in every form with XSS payloads.
     Returns a list of finding dicts.
@@ -65,21 +65,21 @@ def test_xss(base_url: str, forms: list[dict]) -> list[dict]:
                 data = _build_form_data(inputs, field_name, payload)
 
                 try:
+                    client = session or requests
                     if method == "post":
-                        resp = requests.post(action, data=data, headers=HEADERS,
-                                             timeout=REQUEST_TIMEOUT, verify=False,
-                                             allow_redirects=True)
+                        resp = client.post(action, data=data, headers=HEADERS,
+                                           timeout=REQUEST_TIMEOUT, verify=False,
+                                           allow_redirects=True)
                     else:
-                        resp = requests.get(action, params=data, headers=HEADERS,
-                                            timeout=REQUEST_TIMEOUT, verify=False,
-                                            allow_redirects=True)
+                        resp = client.get(action, params=data, headers=HEADERS,
+                                          timeout=REQUEST_TIMEOUT, verify=False,
+                                          allow_redirects=True)
 
                     finding = _analyse_response(resp, action, field_name, payload)
                     if finding:
+                        finding["method"] = method.upper()
                         findings.append(finding)
-                        logger.warning(
-                            f"[XSS] {action} | field={field_name} | payload={payload}"
-                        )
+                        logger.warning("[XSS] %s | field=%s", action, field_name)
                         break  # One confirmed finding per field is enough
 
                 except requests.RequestException as exc:
@@ -124,12 +124,12 @@ def _analyse_response(response, action: str, field: str, payload: str) -> dict |
     # The payload must appear literally (not HTML-encoded) to be exploitable
     if payload in body:
         return {
-            "type": "Cross-Site Scripting (XSS)",
-            "severity": "High",
+            "type": "Potential Reflected XSS",
+            "severity": "Medium",
             "url": action,
             "field": field,
             "payload": payload,
-            "evidence": "Payload reflected verbatim in HTTP response body without encoding.",
+            "evidence": "Payload was reflected verbatim in the HTTP response. This is reflection evidence; JavaScript execution was not tested.",
             "fix": (
                 "HTML-encode all user-supplied data before rendering it in the page "
                 "(use html.escape() in Python, or a templating engine with auto-escaping "
@@ -142,7 +142,7 @@ def _analyse_response(response, action: str, field: str, payload: str) -> dict |
     escaped = html.escape(payload)
     if escaped != payload and payload[:10] in body:
         return {
-            "type": "Potential XSS (Partial Reflection)",
+            "type": "Potential Reflected XSS (Partial Reflection)",
             "severity": "Medium",
             "url": action,
             "field": field,

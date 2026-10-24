@@ -75,6 +75,8 @@ def test_authentication(base_url: str, forms: list[dict]) -> list[dict]:
     """
     findings = []
 
+    auth_session = requests.Session()
+    auth_session.headers.update(HEADERS)
     login_forms = _identify_login_forms(forms)
     logger.info(f"Found {len(login_forms)} login form(s) to test.")
 
@@ -83,22 +85,22 @@ def test_authentication(base_url: str, forms: list[dict]) -> list[dict]:
         inputs  = form["inputs"]
 
         # --- Test 1: Weak credentials ---
-        weak_finding = _test_weak_credentials(action, inputs)
+        weak_finding = _test_weak_credentials(action, inputs, auth_session)
         if weak_finding:
             findings.append(weak_finding)
 
         # --- Test 2: Rate limiting detection ---
-        rate_finding = _test_rate_limiting(action, inputs)
+        rate_finding = _test_rate_limiting(action, inputs, auth_session)
         if rate_finding:
             findings.append(rate_finding)
 
         # --- Test 3: User enumeration via verbose errors ---
-        enum_finding = _test_user_enumeration(action, inputs)
+        enum_finding = _test_user_enumeration(action, inputs, auth_session)
         if enum_finding:
             findings.append(enum_finding)
 
         # --- Test 4: Password strength policy ---
-        policy_finding = _test_password_policy(action, inputs)
+        policy_finding = _test_password_policy(action, inputs, auth_session)
         if policy_finding:
             findings.append(policy_finding)
 
@@ -109,7 +111,7 @@ def test_authentication(base_url: str, forms: list[dict]) -> list[dict]:
 # Individual test functions
 # ---------------------------------------------------------------------------
 
-def _test_weak_credentials(action: str, inputs: list[dict]) -> dict | None:
+def _test_weak_credentials(action: str, inputs: list[dict], session=None) -> dict | None:
     """Try common username/password pairs and detect successful login."""
     user_field, pass_field = _find_credential_fields(inputs)
     if not user_field or not pass_field:
@@ -118,24 +120,21 @@ def _test_weak_credentials(action: str, inputs: list[dict]) -> dict | None:
     for username, password in WEAK_CREDENTIALS:
         data = _build_login_data(inputs, user_field, pass_field, username, password)
         try:
-            resp = requests.post(action, data=data, headers=HEADERS,
+            resp = (session or requests).post(action, data=data, headers=HEADERS,
                                  timeout=REQUEST_TIMEOUT, verify=False,
                                  allow_redirects=True)
             body_lower = resp.text.lower()
 
             if any(ind in body_lower for ind in SUCCESS_INDICATORS):
-                logger.warning(
-                    f"[Auth] Weak credentials worked! {action} → {username}:{password}"
-                )
+                logger.warning("[Auth] Common credentials succeeded at %s for username=%s", action, username)
                 return {
                     "type": "Weak Authentication — Default Credentials",
                     "severity": "High",
                     "url": action,
                     "field": f"{user_field} / {pass_field}",
-                    "payload": f"{username} / {password}",
+                    "payload": f"Common credential pair for username '{username}' (password redacted)",
                     "evidence": (
-                        f"Login succeeded with common credentials "
-                        f"'{username}' / '{password}'."
+                        f"Login succeeded with a common credential pair for username '{username}'. The password is redacted."
                     ),
                     "fix": (
                         "Enforce a strong password policy (min 12 chars, mixed case, "
@@ -150,7 +149,7 @@ def _test_weak_credentials(action: str, inputs: list[dict]) -> dict | None:
     return None
 
 
-def _test_rate_limiting(action: str, inputs: list[dict]) -> dict | None:
+def _test_rate_limiting(action: str, inputs: list[dict], session=None) -> dict | None:
     """
     Send 10 rapid login attempts and check whether the server ever blocks us.
     If all 10 requests return HTTP 200, rate limiting is likely absent.
@@ -168,7 +167,7 @@ def _test_rate_limiting(action: str, inputs: list[dict]) -> dict | None:
             "testuser", f"wrongpass{i}"
         )
         try:
-            resp = requests.post(action, data=data, headers=HEADERS,
+            resp = (session or requests).post(action, data=data, headers=HEADERS,
                                  timeout=REQUEST_TIMEOUT, verify=False,
                                  allow_redirects=False)
             # 429 Too Many Requests or a redirect to a lockout page = rate limited
@@ -202,7 +201,7 @@ def _test_rate_limiting(action: str, inputs: list[dict]) -> dict | None:
     return None
 
 
-def _test_user_enumeration(action: str, inputs: list[dict]) -> dict | None:
+def _test_user_enumeration(action: str, inputs: list[dict], session=None) -> dict | None:
     """
     Detect if the application reveals whether a username exists through
     different error messages for 'unknown user' vs 'wrong password'.
@@ -219,9 +218,10 @@ def _test_user_enumeration(action: str, inputs: list[dict]) -> dict | None:
                                      "admin", "wrongpassword")
 
     try:
-        resp1 = requests.post(action, data=data_no_user, headers=HEADERS,
+        client = session or requests
+        resp1 = client.post(action, data=data_no_user, headers=HEADERS,
                                timeout=REQUEST_TIMEOUT, verify=False)
-        resp2 = requests.post(action, data=data_common, headers=HEADERS,
+        resp2 = client.post(action, data=data_common, headers=HEADERS,
                                timeout=REQUEST_TIMEOUT, verify=False)
 
         body1 = resp1.text.lower()
@@ -272,7 +272,7 @@ def _test_user_enumeration(action: str, inputs: list[dict]) -> dict | None:
     return None
 
 
-def _test_password_policy(action: str, inputs: list[dict]) -> dict | None:
+def _test_password_policy(action: str, inputs: list[dict], session=None) -> dict | None:
     """
     Try to register / log in with a trivially weak password to see if the
     server rejects it. If not → likely no password policy enforced.
@@ -286,7 +286,7 @@ def _test_password_policy(action: str, inputs: list[dict]) -> dict | None:
     for pwd in weak_passwords:
         data = _build_login_data(inputs, user_field, pass_field, "testuser", pwd)
         try:
-            resp = requests.post(action, data=data, headers=HEADERS,
+            resp = (session or requests).post(action, data=data, headers=HEADERS,
                                  timeout=REQUEST_TIMEOUT, verify=False,
                                  allow_redirects=True)
             body_lower = resp.text.lower()
@@ -300,7 +300,7 @@ def _test_password_policy(action: str, inputs: list[dict]) -> dict | None:
                     "severity": "Medium",
                     "url": action,
                     "field": pass_field,
-                    "payload": f"Password: '{pwd}' (length={len(pwd)})",
+                    "payload": f"Weak password length test (length={len(pwd)}; value redacted)",
                     "evidence": (
                         f"Server accepted a {len(pwd)}-character password without complaint. "
                         "No minimum length or complexity requirement appears to be enforced."

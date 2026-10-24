@@ -70,7 +70,7 @@ SUCCESS_INDICATORS = [
 ]
 
 
-def test_sql_injection(base_url: str, forms: list[dict]) -> list[dict]:
+def test_sql_injection(base_url: str, forms: list[dict], session=None) -> list[dict]:
     """
     Iterate over all crawled forms and test each text-like field with SQLi payloads.
 
@@ -99,21 +99,21 @@ def test_sql_injection(base_url: str, forms: list[dict]) -> list[dict]:
                 data = _build_form_data(inputs, field_name, payload)
 
                 try:
+                    client = session or requests
                     if method == "post":
-                        resp = requests.post(action, data=data, headers=HEADERS,
-                                             timeout=REQUEST_TIMEOUT, verify=False,
-                                             allow_redirects=True)
+                        resp = client.post(action, data=data, headers=HEADERS,
+                                           timeout=REQUEST_TIMEOUT, verify=False,
+                                           allow_redirects=True)
                     else:
-                        resp = requests.get(action, params=data, headers=HEADERS,
-                                            timeout=REQUEST_TIMEOUT, verify=False,
-                                            allow_redirects=True)
+                        resp = client.get(action, params=data, headers=HEADERS,
+                                          timeout=REQUEST_TIMEOUT, verify=False,
+                                          allow_redirects=True)
 
                     finding = _analyse_response(resp, action, field_name, payload)
                     if finding:
+                        finding["method"] = method.upper()
                         findings.append(finding)
-                        logger.warning(
-                            f"[SQLi] {action} | field={field_name} | payload={payload}"
-                        )
+                        logger.warning("[SQLi] %s | field=%s", action, field_name)
                         # Don't spam with multiple payloads once we found it
                         break
 
@@ -173,23 +173,6 @@ def _analyse_response(response, action: str, field: str, payload: str) -> dict |
                     "Use parameterised queries / prepared statements. "
                     "Never concatenate user input into SQL strings. "
                     "Apply an ORM (e.g. SQLAlchemy) and validate/sanitise all inputs."
-                )
-            }
-
-    # Check for auth-bypass (medium confidence)
-    for indicator in SUCCESS_INDICATORS:
-        if indicator in body_lower:
-            return {
-                "type": "SQL Injection (Auth Bypass)",
-                "severity": "High",
-                "url": action,
-                "field": field,
-                "payload": payload,
-                "evidence": f"Possible authentication bypass — success indicator '{indicator}' found after injection.",
-                "fix": (
-                    "Use parameterised queries. Hash passwords with bcrypt. "
-                    "Implement account-lockout after failed attempts. "
-                    "Use server-side session management."
                 )
             }
 

@@ -122,9 +122,15 @@ If Nmap is missing, VulnRadar shows a clear setup error instead of generating fa
 ### Web Application Scan
 
 1. In **Web Application Scanner**, enter a target URL such as `http://localhost:4280`.
-2. Select modules: SQL Injection, XSS, Directory Traversal, Authentication.
-3. Click **Launch Scan**.
-4. Findings include evidence and remediation guidance.
+2. Optionally enable authentication, then enter credentials and a maximum page count.
+3. Select modules: SQL Injection, XSS, Directory Traversal, Authentication.
+4. Click **Launch Scan**.
+5. Findings include the discovered URL, HTTP method, field, evidence, and remediation guidance.
+
+The `/scan` endpoint accepts `url`, optional `username` and `password`, optional
+`max_pages`, and a `modules` object. Authenticated scans use one `requests.Session`
+for login, crawling, SQLi, XSS, and traversal. Authentication weakness checks use a
+separate session and never include passwords in logs or reports.
 
 ### Task 3 - HTTP Log Analysis
 

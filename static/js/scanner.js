@@ -13,6 +13,11 @@ let activeFilter = "all";
 // ── URL validation ─────────────────────────────────────────────────────────
 const urlInput    = document.getElementById("target-url");
 const urlIndicator = document.getElementById("url-indicator");
+const authToggle = document.getElementById("use-authentication");
+authToggle.addEventListener("change", () => {
+  document.getElementById("auth-fields").hidden = !authToggle.checked;
+  document.getElementById("auth-status").textContent = authToggle.checked ? "Authentication ready" : "Authentication not requested";
+});
 
 urlInput.addEventListener("input", () => {
   const val = urlInput.value.trim();
@@ -76,16 +81,19 @@ function completeProgress() {
   document.getElementById("progress-label").textContent = "Scan complete!";
 }
 
-// Fake progress ticker that advances while we wait for the real result
-function startProgressTicker() {
+// Keep the progress indicator honest about the first phase of the request.
+function startProgressTicker(authenticationRequested) {
   let step = 0;
   setProgress(0);
+  document.getElementById("progress-label").textContent = authenticationRequested ? "Authenticating…" : "Crawling pages…";
 
   return setInterval(() => {
     if (step < STEPS.length - 1) {
       step++;
       setProgress(step);
-      const labels = ["Crawling forms", "Testing SQL Injection", "Testing XSS", "Testing Auth", "Testing Directory Traversal"];
+      const labels = authenticationRequested
+        ? ["Authenticating", "Crawling authenticated pages", "Testing SQL Injection", "Testing XSS", "Testing Directory Traversal"]
+        : ["Crawling pages", "Testing SQL Injection", "Testing XSS", "Testing Auth", "Testing Directory Traversal"];
       if (labels[step - 1]) log(labels[step - 1] + "…", "step");
     }
   }, 2200); // advance roughly every 2.2 s
@@ -123,7 +131,16 @@ async function startScan() {
   log(`Scan started → ${url}`, "success");
   log("Connecting to target…", "info");
 
-  const ticker = startProgressTicker();
+  const username = document.getElementById("auth-username").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const authenticationRequested = authToggle.checked || Boolean(username || password);
+  if (authenticationRequested) {
+    log("Authenticating…", "info");
+  } else {
+    log("Crawling pages…", "info");
+  }
+
+  const ticker = startProgressTicker(authenticationRequested);
 
   try {
     const response = await fetch("/scan", {
@@ -131,6 +148,9 @@ async function startScan() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url,
+        username,
+        password,
+        max_pages: Number(document.getElementById("max-pages").value) || 25,
         modules: {
           sqli: document.getElementById("module-sqli").checked,
           xss: document.getElementById("module-xss").checked,
@@ -144,11 +164,30 @@ async function startScan() {
 
     if (!response.ok) {
       const err = await response.json();
+      if (err.authentication?.attempted) {
+        const authStatus = document.getElementById("auth-status");
+        authStatus.textContent = `Authentication failed: ${err.authentication.message || "unknown reason"}`;
+        authStatus.className = "auth-status failure";
+        log("Authentication failed — authenticated scan was not performed.", "error");
+        document.getElementById("empty-state").style.display = "flex";
+        document.getElementById("progress-section").style.display = "none";
+        return;
+      }
       throw new Error(err.error || "Server error");
     }
 
     const data = await response.json();
     allFindings = data.findings || [];
+
+    const auth = data.authentication || {};
+    const authStatus = document.getElementById("auth-status");
+    authStatus.textContent = auth.attempted ? (auth.success ? "Authentication succeeded" : `Authentication failed: ${auth.message || "unknown reason"}`) : "Authentication not requested";
+    authStatus.className = `auth-status ${auth.attempted ? (auth.success ? "success" : "failure") : ""}`;
+    if (auth.attempted && auth.success) {
+      log("Authentication successful — authenticated session established.", "success");
+      log("Crawling authenticated pages…", "step");
+    }
+    if (data.crawl) log(`Crawl complete — ${data.crawl.pages_discovered} page(s), ${data.crawl.forms_discovered} form(s).`, "step");
 
     completeProgress();
     log(`Scan complete — ${allFindings.length} finding(s) detected.`, "success");
@@ -363,6 +402,10 @@ function buildFindingCard(finding, num) {
       <div class="detail-row">
         <span class="detail-key">Field</span>
         <span class="detail-val">${escHtml(finding.field || "—")}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-key">Method</span>
+        <span class="detail-val">${escHtml(finding.method || "—")}</span>
       </div>
       <div class="detail-row">
         <span class="detail-key">Payload</span>

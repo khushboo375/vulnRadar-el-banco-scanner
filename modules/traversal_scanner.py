@@ -36,7 +36,7 @@ SENSITIVE_FILE_SIGNATURES = [
 FILE_PARAM_HINTS = ("file", "path", "page", "template", "include", "view", "doc", "folder")
 
 
-def test_directory_traversal(base_url: str, forms: list[dict]) -> list[dict]:
+def test_directory_traversal(base_url: str, forms: list[dict], session=None) -> list[dict]:
     findings = []
     seen = set()
 
@@ -49,7 +49,7 @@ def test_directory_traversal(base_url: str, forms: list[dict]) -> list[dict]:
         for payload in TRAVERSAL_PAYLOADS:
             test_url, params = _build_request(url, field, payload)
             try:
-                response = requests.get(
+                    response = (session or requests).get(
                     test_url,
                     params=params,
                     headers=HEADERS,
@@ -116,6 +116,7 @@ def _analyse_response(response, url: str, field: str, payload: str) -> dict | No
                 "url": url,
                 "target": url,
                 "field": field,
+                "method": "GET",
                 "payload": payload,
                 "evidence": f"Sensitive file signature detected in response: '{signature}'",
                 "description": "Traversal payload returned content that resembles a sensitive local file.",
@@ -129,21 +130,5 @@ def _analyse_response(response, url: str, field: str, payload: str) -> dict | No
                     "validate file names; use allowlists; avoid directly using user-controlled paths."
                 ),
             }
-
-    if response.status_code == 200 and any(marker in response.url.lower() for marker in ("../", "%2f..", "etc/passwd")):
-        return {
-            "type": "Potential Directory Traversal",
-            "source": "Web Scanner",
-            "severity": "Medium",
-            "url": url,
-            "target": url,
-            "field": field,
-            "payload": payload,
-            "evidence": "Traversal payload was accepted with HTTP 200, but no sensitive file signature was confirmed.",
-            "description": "The application accepted a traversal-style path. Manual validation is recommended.",
-            "impact": "Improper path handling may expose files if additional controls are missing.",
-            "fix": "Normalize paths, reject traversal sequences, and use an allowlist of valid file identifiers.",
-            "mitigation": "Normalize paths, reject traversal sequences, and use an allowlist of valid file identifiers.",
-        }
 
     return None

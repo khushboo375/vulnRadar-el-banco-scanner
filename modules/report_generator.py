@@ -52,6 +52,7 @@ def generate_html_report(target_url: str, findings: list[dict], output_path: str
                 <tr><th>Source</th><td>{_esc(f.get('source', 'Web Scanner'))}</td></tr>
                 <tr><th>Target</th><td>{_esc(f.get('target') or f.get('url') or target_url)}</td></tr>
                 <tr><th>URL / Endpoint</th><td>{_esc(f.get('url', ''))}</td></tr>
+                <tr><th>HTTP Method</th><td>{_esc(f.get('method', ''))}</td></tr>
                 <tr><th>Affected Field</th><td>{_esc(str(f.get('field','')))}</td></tr>
                 <tr><th>Test Payload</th><td><code>{_esc(str(f.get('payload','')))}</code></td></tr>
                 <tr><th>Description</th><td>{_esc(f.get('description',''))}</td></tr>
@@ -145,6 +146,7 @@ def generate_html_report(target_url: str, findings: list[dict], output_path: str
 </div>
 
 {network_html}
+{_render_scan_metadata(report_context)}
 {web_html}
 {log_html}
 
@@ -227,6 +229,29 @@ def _render_network_section(network_results: dict | None) -> str:
       <p><strong>OS Detection:</strong></p><ul>{os_rows or '<li>No OS match returned.</li>'}</ul>
       <p><strong>NSE / Script Results:</strong></p><ul>{script_rows or '<li>No script output returned.</li>'}</ul>
       <p><strong>Traceroute:</strong></p><ul>{trace_rows or '<li>No traceroute output returned.</li>'}</ul>
+    </div>
+    """
+
+
+def _render_scan_metadata(report_context: dict) -> str:
+    """Render web authentication/crawl metadata without secrets."""
+    auth = report_context.get("authentication") or {}
+    crawl = report_context.get("crawl") or {}
+    modules = report_context.get("modules") or {}
+    attempted = "Yes" if auth.get("attempted") else "No"
+    success = "Yes" if auth.get("success") else "No"
+    enabled = ", ".join(name for name, enabled in modules.items() if enabled) or "None"
+    return f"""
+    <div class="report-section">
+      <h2>3. Scan Metadata</h2>
+      <table class="simple-table">
+        <tr><th>Authentication attempted</th><td>{attempted}</td></tr>
+        <tr><th>Authentication successful</th><td>{success}</td></tr>
+        <tr><th>Authentication status</th><td>{_esc(auth.get('message', ''))}</td></tr>
+        <tr><th>Pages discovered</th><td>{_esc(crawl.get('pages_discovered', 0))}</td></tr>
+        <tr><th>Forms discovered</th><td>{_esc(crawl.get('forms_discovered', 0))}</td></tr>
+        <tr><th>Modules executed</th><td>{_esc(enabled)}</td></tr>
+      </table>
     </div>
     """
 
