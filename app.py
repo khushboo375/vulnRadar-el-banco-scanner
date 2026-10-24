@@ -8,7 +8,7 @@ Author: Security Scanner Project
 import os
 import json
 import logging
-from datetime import datetime
+import uuid
 from flask import Flask, render_template, request, jsonify, send_file
 from modules.crawler import create_session, crawl_authenticated_pages, login_to_target
 from modules.sql_scanner import test_sql_injection
@@ -23,8 +23,9 @@ from modules.report_generator import generate_html_report
 # App setup
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
+app.config["REPORTS_DIR"] = os.path.join(app.root_path, "reports")
 os.makedirs("logs", exist_ok=True)
-os.makedirs("reports", exist_ok=True)
+os.makedirs(app.config["REPORTS_DIR"], exist_ok=True)
 
 # Configure logging to file + console
 logging.basicConfig(
@@ -141,8 +142,7 @@ def scan():
     findings = normalize_findings(findings, default_source="Web Scanner")
     logger.info(f"Scan complete — {len(findings)} finding(s)")
 
-    # Persist latest report for download
-    report_path = f"reports/report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    report_id, report_path = _new_report_path()
     report_context = {
         "title": "EL BANCO PENETRATION TEST REPORT",
         "target_url": target_url,
@@ -163,7 +163,8 @@ def scan():
             "forms_discovered": crawl["forms_discovered"],
         },
         "modules": modules,
-        "report": report_path
+        "report": report_path,
+        "report_id": report_id,
     })
 
 
@@ -186,7 +187,7 @@ def network_scan():
         logger.error("Network scan error: %s", exc)
         return jsonify({"error": str(exc)}), 400
 
-    report_path = f"reports/report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    report_id, report_path = _new_report_path()
     generate_html_report(
         target,
         result.get("findings", []),
@@ -203,6 +204,7 @@ def network_scan():
         "result": result,
         "findings": result.get("findings", []),
         "report": report_path,
+        "report_id": report_id,
     })
 
 
@@ -222,7 +224,7 @@ def analyze_http_logs():
     findings = analyze_logs(log_text)
     logger.info("HTTP log analysis complete — %s finding(s)", len(findings))
 
-    report_path = f"reports/report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    report_id, report_path = _new_report_path()
     generate_html_report(
         "HTTP Access Logs",
         findings,
@@ -238,22 +240,29 @@ def analyze_http_logs():
         "total": len(findings),
         "findings": findings,
         "report": report_path,
+        "report_id": report_id,
     })
 
 
 @app.route("/download-report")
 def download_report():
-    """Download the most recently generated HTML report."""
-    reports_dir = "reports"
-    files = sorted(
-        [f for f in os.listdir(reports_dir) if f.endswith(".html")],
-        reverse=True
-    )
-    if not files:
-        return jsonify({"error": "No report available yet"}), 404
+    """Download the exact report selected by the completed workflow."""
+    report_id = request.args.get("report_id", "")
+    try:
+        report_id = str(uuid.UUID(report_id))
+    except (ValueError, AttributeError):
+        return jsonify({"error": "A valid report_id is required."}), 400
 
-    latest = os.path.join(reports_dir, files[0])
-    return send_file(latest, as_attachment=True, download_name="security_report.html")
+    report_path = os.path.join(app.config["REPORTS_DIR"], f"report_{report_id}.html")
+    if not os.path.isfile(report_path):
+        return jsonify({"error": "Report not found or no longer available."}), 404
+    return send_file(report_path, as_attachment=True, download_name="security_report.html", mimetype="text/html")
+
+
+def _new_report_path() -> tuple[str, str]:
+    """Allocate a unique report identifier and its path in the configured directory."""
+    report_id = str(uuid.uuid4())
+    return report_id, os.path.join(app.config["REPORTS_DIR"], f"report_{report_id}.html")
 
 
 def normalize_findings(findings: list[dict], default_source: str) -> list[dict]:

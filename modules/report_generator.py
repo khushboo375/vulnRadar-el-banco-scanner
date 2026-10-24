@@ -195,6 +195,7 @@ def _render_network_section(network_results: dict | None) -> str:
             rows += (
                 "<tr>"
                 f"<td>{_esc(host.get('host'))}</td>"
+                f"<td>{_esc(host.get('state'))}</td>"
                 f"<td>{_esc(str(port.get('port')) + '/' + port.get('protocol', 'tcp'))}</td>"
                 f"<td>{_esc(port.get('state'))}</td>"
                 f"<td>{_esc(port.get('service'))}</td>"
@@ -223,8 +224,8 @@ def _render_network_section(network_results: dict | None) -> str:
       <p><strong>Scan:</strong> {_esc(network_results.get('scan_type'))}</p>
       <p><strong>Command:</strong> <code>{_esc(network_results.get('command'))}</code></p>
       <table class="simple-table">
-        <tr><th>Host</th><th>Port</th><th>State</th><th>Service</th><th>Version</th></tr>
-        {rows or '<tr><td colspan="5">No port results returned.</td></tr>'}
+        <tr><th>Host</th><th>Host State</th><th>Port</th><th>Port State</th><th>Service</th><th>Version</th></tr>
+        {rows or '<tr><td colspan="6">No port results returned.</td></tr>'}
       </table>
       <p><strong>OS Detection:</strong></p><ul>{os_rows or '<li>No OS match returned.</li>'}</ul>
       <p><strong>NSE / Script Results:</strong></p><ul>{script_rows or '<li>No script output returned.</li>'}</ul>

@@ -9,6 +9,7 @@
 // ── State ──────────────────────────────────────────────────────────────────
 let allFindings = [];
 let activeFilter = "all";
+let currentReportId = null;
 
 // ── URL validation ─────────────────────────────────────────────────────────
 const urlInput    = document.getElementById("target-url");
@@ -119,6 +120,7 @@ async function startScan() {
   scanBtn.classList.add("scanning");
 
   document.getElementById("report-btn").style.display = "none";
+  currentReportId = null;
   document.getElementById("empty-state").style.display = "none";
   document.getElementById("results-container").style.display = "none";
   document.getElementById("progress-section").style.display = "block";
@@ -177,6 +179,7 @@ async function startScan() {
     }
 
     const data = await response.json();
+    currentReportId = data.report_id || null;
     allFindings = data.findings || [];
 
     const auth = data.authentication || {};
@@ -241,6 +244,7 @@ async function startNetworkScan(scanType) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Network scan failed");
 
+    currentReportId = data.report_id || null;
     allFindings = data.findings || [];
     log(`${label} complete — ${allFindings.length} network finding(s).`, "success");
     if (data.result) renderNetworkDetails(data.result);
@@ -284,6 +288,7 @@ async function startLogAnalysis() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Log analysis failed");
 
+    currentReportId = data.report_id || null;
     allFindings = data.findings || [];
     log(`HTTP log analysis complete — ${allFindings.length} suspicious request(s).`, "success");
     showFindings(allFindings);
@@ -296,6 +301,7 @@ async function startLogAnalysis() {
 }
 
 function prepareResultsArea() {
+  currentReportId = null;
   document.getElementById("report-btn").style.display = "none";
   document.getElementById("empty-state").style.display = "none";
   document.getElementById("results-container").style.display = "none";
@@ -448,8 +454,12 @@ function filterResults(severity) {
 
 // ── Report download ────────────────────────────────────────────────────────
 function downloadReport() {
+  if (!currentReportId) {
+    log("No report is available for the current results. Run the workflow again.", "error");
+    return;
+  }
   log("Downloading report…", "info");
-  window.location.href = "/download-report";
+  window.location.href = `/download-report?report_id=${encodeURIComponent(currentReportId)}`;
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
